@@ -13,6 +13,7 @@ flags:
                   rather than fetched from the nix cache (fast).
 
     -v --verbose  print more information.
+
 EOF
 
 # ------------------------------------------------------------------------------
@@ -39,6 +40,10 @@ SCRIPT=""      # script
 while [[ $# -gt 0 ]]; do
     key="$1"
     case $key in
+    -h | --help)
+        echo "$USAGE"
+        exit 0
+        ;;
     --shell)
         RUN_SHELL=1
         shift
