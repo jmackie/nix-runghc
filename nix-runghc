@@ -1,0 +1,138 @@
+#!/usr/bin/env bash
+
+read -r -d '' USAGE <<EOF
+usage: nix-runghc [flags] script
+
+    where 'script' is the path to haskell module.
+
+flags:
+    --shell       drop into a nix-shell rather than invoking runghc and exiting.
+
+    --hoogle      if --shell is set, drop into a shell with hoogle docs. Note
+                  this will probably require packages to be freshly compiled (slow)
+                  rather than fetched from the nix cache (fast).
+
+    -v --verbose  print more information.
+EOF
+
+# ------------------------------------------------------------------------------
+#   UTIL
+# ------------------------------------------------------------------------------
+
+__echo_colour() {
+    echo -e "\\e[$1$2\\e[0m"
+}
+
+__echo_blue_light() {
+    __echo_colour '0;94m' "$*"
+}
+
+# ------------------------------------------------------------------------------
+#   OPTIONS
+# ------------------------------------------------------------------------------
+
+RUN_SHELL=""   # --shell
+WITH_HOOGLE="" # --hoogle
+VERBOSITY=0    # -v|--verbose
+SCRIPT=""      # script
+
+while [[ $# -gt 0 ]]; do
+    key="$1"
+    case $key in
+    --shell)
+        RUN_SHELL=1
+        shift
+        ;;
+    --hoogle)
+        WITH_HOOGLE=1
+        shift
+        ;;
+    -v | --verbose)
+        VERBOSITY=1
+
+        shift
+        ;;
+    *)
+        SCRIPT="$1"
+        break
+        ;;
+    esac
+done
+
+if [ -z "$SCRIPT" ]; then
+    echo "error: missing script argument"
+    echo ""
+    echo "$USAGE"
+    exit 1
+elif [ ! -f "$SCRIPT" ]; then
+    echo "error: $1 does not exist"
+    echo ""
+    echo "$USAGE"
+    exit 1
+fi
+
+# ------------------------------------------------------------------------------
+#   MODULE PROCESSING
+# ------------------------------------------------------------------------------
+
+HASKELL_DEPS=""   # space-separated list of package names
+GHC_VERSION="842" # ghc compiler version to use
+
+# Process the input script line-by-line, extracting the information we need.
+while read -r LINE; do
+    if [[ "$LINE" =~ ^#![[:space:]]ghc=([[:digit:]]+) ]]; then
+        # Environment variables can be set in subsequent shebang lines.
+        # We could match the pattern `(.*)=(.*)` and just `eval` them, but
+        # it feels safer to just handle expected variables.
+
+        GHC_VERSION="${BASH_REMATCH[1]}"
+
+    elif [[ "$LINE" =~ ^import[[:space:]]+.*\"(.*)\" ]]; then
+        # Here is where we look for `PackageImports` and add matches to the
+        # the `HASKELL_DEPS` list.
+
+        HASKELL_DEPS+=" ${BASH_REMATCH[1]}"
+
+    fi
+done <"$1"
+
+# ------------------------------------------------------------------------------
+#   EVAL
+# ------------------------------------------------------------------------------
+
+if [ -n "$RUN_SHELL" ]; then
+    # User has requested to be dropped into a nix-shell.
+
+    ATTR="ghcWithPackages"
+    if [ -n "$WITH_HOOGLE" ]; then
+        ATTR="ghcWithHoogle"
+    fi
+
+    # Decide on --command option to pass to `nix-shell`
+    if ((VERBOSITY > 0)); then
+        __echo_blue_light "Found packages:$HASKELL_DEPS"
+        COMMAND="ghc-pkg list; return"
+    else
+        COMMAND="return"
+    fi
+
+    eval "nix-shell \
+        --packages \"haskell.packages.ghc$GHC_VERSION.$ATTR (pkgs: with pkgs; [$HASKELL_DEPS])\"\
+        --command \"$COMMAND\""
+
+else
+    # Pass the module to runghc (default behaviour).
+
+    # Decide on --command option to pass to `nix-shell`
+    if ((VERBOSITY > 0)); then
+        __echo_blue_light "Found packages:$HASKELL_DEPS"
+        COMMAND="ghc-pkg list; sed '/^!#/d' $1 | runghc --ghc-arg=-XPackageImports; exit"
+    else
+        COMMAND="sed '/^!#/d' $1 | runghc --ghc-arg=-XPackageImports; exit"
+    fi
+
+    eval "nix-shell \
+        --packages \"haskell.packages.ghc$GHC_VERSION.ghcWithPackages (pkgs: with pkgs; [$HASKELL_DEPS])\"\
+        --pure\
+        --command \"$COMMAND\""
+fi
