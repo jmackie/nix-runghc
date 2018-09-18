@@ -21,13 +21,14 @@ $ curl https://raw.githubusercontent.com/jmackie/nix-runghc/master/nix-runghc > 
 {-# LANGUAGE PackageImports    #-}
 module Main where
 
-import           "aeson" Data.Aeson                 ((.:))
-import qualified "aeson"Data.Aeson                 as Aeson
+import           "aeson" Data.Aeson                      ((.:))
+import qualified "aeson" Data.Aeson                      as Aeson
 import qualified "bytestring" Data.ByteString.Lazy.Char8 as ByteString
-import qualified "HTTP"Network.HTTP               as HTTP
-import qualified System.IO                  as IO
+import qualified "HTTP" Network.HTTP                     as HTTP
+import qualified System.IO                               as IO
 
-...
+-- Some actual code here...
+
 ```
 
 Provided `nix-runghc` is available on your path and the module (above) is executable, you can run it with:
